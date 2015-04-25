@@ -1,0 +1,168 @@
+---
+title: "Practical Machine Learning Project"
+author: "Elisa"
+date: "Tuesday, March 17, 2015"
+output: html_document
+---
+
+The scope of this project is to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. The objective is to build a model to accurately predict the manner in which the participant did the exercise.
+
+#Loading of data set
+
+## Loading all the required libraries
+```{r, message=FALSE}
+setwd("C:/Users/elisa/OneDrive/Coursera/Coursera - Data Specialization Track/8 Practical Machine Learning/Project")
+library(caret)
+library(Hmisc)
+```
+
+## Importing datasets
+```{r}
+raw_train <- read.csv("pml-training.csv",header = TRUE, sep = ",", quote = "\"")
+raw_test <- read.csv("pml-testing.csv",header = TRUE, sep = ",", quote = "\"")
+```
+
+#Preprocessing and exploration
+
+## Examining the data structure 
+
+Please refer to Appendix A for details.
+
+Noticed that there are 160 features with alot of NAs. Will need to use various methods to reduce the features to the most important ones.
+
+## Removing features with near zero variance
+As features that do not contain much variety are not useful in a model, they are removed to reduce the number of features in the dataset.
+```{r}
+zerovar <- nearZeroVar(raw_train)
+newtrain <- raw_train[,-zerovar]
+newtest <- raw_test[,-zerovar]
+```
+There are `r length(zerovar)` features with near zero variance, and they have been removed.
+
+## Removing features that are irrelevant such as time of day etc.
+```{r}
+newtrain <- subset( newtrain, select = -c(X,user_name, raw_timestamp_part_1, raw_timestamp_part_2,cvtd_timestamp ))
+newtest <- subset( newtest, select = -c(X,user_name, raw_timestamp_part_1, raw_timestamp_part_2,cvtd_timestamp ))
+```
+The following features have been removed as they are irrelevant and should not be considered when building the model.
+
+1. row number
+2. user_name
+3. raw_timestamp_part_1
+4. raw_timestamp_part_2
+5. cvtd_timestamp
+
+## Removing features that contain mostly NAs
+Based on examining the summary, there are a number of features with more than 97% NA values.
+
+A function is written to calculate the percentage of NAs per column.
+```{r}
+
+checkNAs <- function(data) {
+  percentageNA <- numeric(ncol(data))
+  
+  for (i in 1:ncol(data)) {
+    num_NAs <- sum(is.na(data[,i]))
+    percentageNA[i] <- num_NAs / nrow(data)
+  }
+  
+  return (data.frame(colid = 1:ncol(data),colname = as.character(colnames(data)), percentageNA))
+}
+
+```
+
+Using 97% as the cut off point, all columns with more than 97% NA values will be removed.
+
+```{r}
+NAEval <- checkNAs(newtrain)
+newtrain <- subset(newtrain, select = -NAEval$colid[NAEval$percentageNA>0.97])
+newtest <- subset(newtest, select = -NAEval$colid[NAEval$percentageNA>0.97])
+```
+
+Examine the dimensions of the resulting dataset.
+```{r}
+dim(newtrain)
+dim(newtest)
+```
+
+## Preprocess the data
+Center, scale and impute values.
+```{r}
+train_predictors <- subset(newtrain, select = -c(classe))
+train_predicted <- newtrain$classe
+preProc <- preProcess(train_predictors, method= c("center", "scale", "medianImpute"))
+train_transformed <- predict(preProc, train_predictors)
+test_transformed <- predict(preProc, newtest)
+train <- data.frame(classe = train_predicted, train_predictors)
+```
+
+## Enable multi core
+```{r}
+library(cluster)
+library(parallel)
+library(doSNOW)
+coreNumber=max(detectCores(),1)
+cluster=makeCluster(coreNumber, type = "SOCK",outfile="")
+registerDoSNOW(cluster)
+```
+
+
+# Train the model
+As the objective is to correctly classify the exercises, a random forest and a gradient boosted machine model will be used.
+Based on the results, either one of the models will be selected or the two models will be combined to create an ensemble.
+
+## Partition the data for cross validation
+```{r}
+set.seed(234)
+inTrain <- createDataPartition(y=train$classe, p=0.7, list=FALSE)
+train.training <- train[inTrain,]
+train.testing <- train[-inTrain,]
+```
+
+
+## Random Forest
+### Train
+```{r}
+rf_fit <- train(classe ~ ., data = train.training, method = "rf" )
+```
+
+### Cross Validate
+```{r}
+rf_fit.predict_test <- predict(rf_fit, train.testing)
+rf_fit.confusion <- confusionMatrix(rf_fit.predict_test, train.testing$classe)
+rf_fit.confusion$overall
+```
+
+The accuracy for Random Forest is `r rf_fit.confusion$overall[1]` which is good.
+
+## Gradient Boosting
+### Train
+```{r}
+gbm_fit <- train(classe ~ ., data = train.training, method = "gbm" )
+```
+
+
+### Cross Validate
+```{r}
+gbm_fit.predict_test <- predict(gbm_fit, train.testing)
+gbm_fit.confusion <- confusionMatrix(gbm_fit.predict_test, train.testing$classe)
+gbm_fit.confusion$overall
+```
+
+The accuracy for Gradient Boosting is `r gbm_fit.confusion$overall[1]` which is not as high as Random Forest.
+
+# Select final model and predict the test results
+
+As Random Forest had better accuracy, the random forest model will be used to predict the final test results for submission.
+
+```{r}
+test.results <- predict(rf_fit, test_transformed)
+```
+
+
+#Appendix A
+## Examining the dataset
+```{r}
+str(raw_train)
+summary(raw_train)
+```
