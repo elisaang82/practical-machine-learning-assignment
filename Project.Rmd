@@ -14,6 +14,7 @@ The scope of this project is to use data from accelerometers on the belt, forear
 setwd("C:/Users/elisa/OneDrive/Coursera/Coursera - Data Specialization Track/8 Practical Machine Learning/Project")
 library(caret)
 library(Hmisc)
+library(randomForest)
 ```
 
 ## Importing datasets
@@ -41,8 +42,8 @@ There are `r length(zerovar)` features with near zero variance, and they have be
 
 ## Removing features that are irrelevant such as time of day etc.
 ```{r}
-newtrain <- subset( newtrain, select = -c(X,user_name, raw_timestamp_part_1, raw_timestamp_part_2,cvtd_timestamp ))
-newtest <- subset( newtest, select = -c(X,user_name, raw_timestamp_part_1, raw_timestamp_part_2,cvtd_timestamp ))
+newtrain <- subset( newtrain, select = -c(X,user_name, raw_timestamp_part_1, raw_timestamp_part_2,cvtd_timestamp, num_window))
+newtest <- subset( newtest, select = -c(X,user_name, raw_timestamp_part_1, raw_timestamp_part_2,cvtd_timestamp, num_window))
 ```
 The following features have been removed as they are irrelevant and should not be considered when building the model.
 
@@ -51,6 +52,8 @@ The following features have been removed as they are irrelevant and should not b
 3. raw_timestamp_part_1
 4. raw_timestamp_part_2
 5. cvtd_timestamp
+6. num_window
+7. problem_id
 
 ## Removing features that contain mostly NAs
 Based on examining the summary, there are a number of features with more than 97% NA values.
@@ -75,25 +78,14 @@ Using 97% as the cut off point, all columns with more than 97% NA values will be
 
 ```{r}
 NAEval <- checkNAs(newtrain)
-newtrain <- subset(newtrain, select = -NAEval$colid[NAEval$percentageNA>0.97])
-newtest <- subset(newtest, select = -NAEval$colid[NAEval$percentageNA>0.97])
+train <- subset(newtrain, select = -NAEval$colid[NAEval$percentageNA>0.97])
+test <- subset(newtest, select = -NAEval$colid[NAEval$percentageNA>0.97])
 ```
 
 Examine the dimensions of the resulting dataset.
 ```{r}
-dim(newtrain)
-dim(newtest)
-```
-
-## Preprocess the data
-Center, scale and impute values.
-```{r}
-train_predictors <- subset(newtrain, select = -c(classe))
-train_predicted <- newtrain$classe
-preProc <- preProcess(train_predictors, method= c("center", "scale", "medianImpute"))
-train_transformed <- predict(preProc, train_predictors)
-test_transformed <- predict(preProc, newtest)
-train <- data.frame(classe = train_predicted, train_predictors)
+dim(train)
+dim(test)
 ```
 
 ## Enable multi core
@@ -113,8 +105,7 @@ Based on the results, either one of the models will be selected or the two model
 
 ## Partition the data for cross validation
 ```{r}
-set.seed(234)
-inTrain <- createDataPartition(y=train$classe, p=0.7, list=FALSE)
+inTrain <- createDataPartition(y=train$classe, p=0.6, list=FALSE)
 train.training <- train[inTrain,]
 train.testing <- train[-inTrain,]
 ```
@@ -123,7 +114,7 @@ train.testing <- train[-inTrain,]
 ## Random Forest
 ### Train
 ```{r}
-rf_fit <- train(classe ~ ., data = train.training, method = "rf" )
+rf_fit <- randomForest(classe ~., data = train.training)
 ```
 
 ### Cross Validate
@@ -156,7 +147,8 @@ The accuracy for Gradient Boosting is `r gbm_fit.confusion$overall[1]` which is 
 As Random Forest had better accuracy, the random forest model will be used to predict the final test results for submission.
 
 ```{r}
-test.results <- predict(rf_fit, test_transformed)
+test.rf.results <- predict(rf_fit, test)
+test.rf.results
 ```
 
 

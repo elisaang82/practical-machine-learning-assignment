@@ -74,7 +74,8 @@ img {
 <h2>Loading all the required libraries</h2>
 <pre class="r"><code>setwd(&quot;C:/Users/elisa/OneDrive/Coursera/Coursera - Data Specialization Track/8 Practical Machine Learning/Project&quot;)
 library(caret)
-library(Hmisc)</code></pre>
+library(Hmisc)
+library(randomForest)</code></pre>
 </div>
 <div id="importing-datasets" class="section level2">
 <h2>Importing datasets</h2>
@@ -99,8 +100,8 @@ newtest &lt;- raw_test[,-zerovar]</code></pre>
 </div>
 <div id="removing-features-that-are-irrelevant-such-as-time-of-day-etc." class="section level2">
 <h2>Removing features that are irrelevant such as time of day etc.</h2>
-<pre class="r"><code>newtrain &lt;- subset( newtrain, select = -c(X,user_name, raw_timestamp_part_1, raw_timestamp_part_2,cvtd_timestamp ))
-newtest &lt;- subset( newtest, select = -c(X,user_name, raw_timestamp_part_1, raw_timestamp_part_2,cvtd_timestamp ))</code></pre>
+<pre class="r"><code>newtrain &lt;- subset( newtrain, select = -c(X,user_name, raw_timestamp_part_1, raw_timestamp_part_2,cvtd_timestamp, num_window))
+newtest &lt;- subset( newtest, select = -c(X,user_name, raw_timestamp_part_1, raw_timestamp_part_2,cvtd_timestamp, num_window))</code></pre>
 <p>The following features have been removed as they are irrelevant and should not be considered when building the model.</p>
 <ol style="list-style-type: decimal">
 <li>row number</li>
@@ -108,6 +109,8 @@ newtest &lt;- subset( newtest, select = -c(X,user_name, raw_timestamp_part_1, ra
 <li>raw_timestamp_part_1</li>
 <li>raw_timestamp_part_2</li>
 <li>cvtd_timestamp</li>
+<li>num_window</li>
+<li>problem_id</li>
 </ol>
 </div>
 <div id="removing-features-that-contain-mostly-nas" class="section level2">
@@ -126,27 +129,13 @@ newtest &lt;- subset( newtest, select = -c(X,user_name, raw_timestamp_part_1, ra
 }</code></pre>
 <p>Using 97% as the cut off point, all columns with more than 97% NA values will be removed.</p>
 <pre class="r"><code>NAEval &lt;- checkNAs(newtrain)
-newtrain &lt;- subset(newtrain, select = -NAEval$colid[NAEval$percentageNA&gt;0.97])
-newtest &lt;- subset(newtest, select = -NAEval$colid[NAEval$percentageNA&gt;0.97])</code></pre>
+train &lt;- subset(newtrain, select = -NAEval$colid[NAEval$percentageNA&gt;0.97])
+test &lt;- subset(newtest, select = -NAEval$colid[NAEval$percentageNA&gt;0.97])</code></pre>
 <p>Examine the dimensions of the resulting dataset.</p>
-<pre class="r"><code>dim(newtrain)</code></pre>
-<pre><code>## [1] 19622    54</code></pre>
-<pre class="r"><code>dim(newtest)</code></pre>
-<pre><code>## [1] 20 54</code></pre>
-</div>
-<div id="preprocess-the-data" class="section level2">
-<h2>Preprocess the data</h2>
-<p>Center, scale and impute values.</p>
-<pre class="r"><code>train_predictors &lt;- subset(newtrain, select = -c(classe))
-train_predicted &lt;- newtrain$classe
-preProc &lt;- preProcess(train_predictors, method= c(&quot;center&quot;, &quot;scale&quot;, &quot;medianImpute&quot;))
-train_transformed &lt;- predict(preProc, train_predictors)
-test_transformed &lt;- predict(preProc, newtest)</code></pre>
-<pre><code>## Warning in sweep(newdata, 2, object$mean, &quot;-&quot;): STATS does not recycle
-## exactly across MARGIN</code></pre>
-<pre><code>## Warning in sweep(newdata, 2, object$std, &quot;/&quot;): STATS does not recycle
-## exactly across MARGIN</code></pre>
-<pre class="r"><code>train &lt;- data.frame(classe = train_predicted, train_predictors)</code></pre>
+<pre class="r"><code>dim(train)</code></pre>
+<pre><code>## [1] 19622    53</code></pre>
+<pre class="r"><code>dim(test)</code></pre>
+<pre><code>## [1] 20 53</code></pre>
 </div>
 <div id="enable-multi-core" class="section level2">
 <h2>Enable multi core</h2>
@@ -175,8 +164,7 @@ registerDoSNOW(cluster)</code></pre>
 <p>As the objective is to correctly classify the exercises, a random forest and a gradient boosted machine model will be used. Based on the results, either one of the models will be selected or the two models will be combined to create an ensemble.</p>
 <div id="partition-the-data-for-cross-validation" class="section level2">
 <h2>Partition the data for cross validation</h2>
-<pre class="r"><code>set.seed(234)
-inTrain &lt;- createDataPartition(y=train$classe, p=0.7, list=FALSE)
+<pre class="r"><code>inTrain &lt;- createDataPartition(y=train$classe, p=0.6, list=FALSE)
 train.training &lt;- train[inTrain,]
 train.testing &lt;- train[-inTrain,]</code></pre>
 </div>
@@ -184,16 +172,7 @@ train.testing &lt;- train[-inTrain,]</code></pre>
 <h2>Random Forest</h2>
 <div id="train" class="section level3">
 <h3>Train</h3>
-<pre class="r"><code>rf_fit &lt;- train(classe ~ ., data = train.training, method = &quot;rf&quot; )</code></pre>
-<pre><code>## Loading required package: randomForest
-## randomForest 4.6-10
-## Type rfNews() to see new features/changes/bug fixes.
-## 
-## Attaching package: 'randomForest'
-## 
-## The following object is masked from 'package:Hmisc':
-## 
-##     combine</code></pre>
+<pre class="r"><code>rf_fit &lt;- randomForest(classe ~., data = train.training)</code></pre>
 </div>
 <div id="cross-validate" class="section level3">
 <h3>Cross Validate</h3>
@@ -201,10 +180,10 @@ train.testing &lt;- train[-inTrain,]</code></pre>
 rf_fit.confusion &lt;- confusionMatrix(rf_fit.predict_test, train.testing$classe)
 rf_fit.confusion$overall</code></pre>
 <pre><code>##       Accuracy          Kappa  AccuracyLower  AccuracyUpper   AccuracyNull 
-##      0.9976211      0.9969909      0.9960118      0.9986988      0.2844520 
+##      0.9946470      0.9932283      0.9927711      0.9961394      0.2844762 
 ## AccuracyPValue  McnemarPValue 
 ##      0.0000000            NaN</code></pre>
-<p>The accuracy for Random Forest is 0.9976211 which is good.</p>
+<p>The accuracy for Random Forest is 0.994647 which is good.</p>
 </div>
 </div>
 <div id="gradient-boosting" class="section level2">
@@ -223,24 +202,24 @@ rf_fit.confusion$overall</code></pre>
 ## 
 ##     is.discrete, summarize</code></pre>
 <pre><code>## Iter   TrainDeviance   ValidDeviance   StepSize   Improve
-##      1        1.6094             nan     0.1000    0.2365
-##      2        1.4587             nan     0.1000    0.1634
-##      3        1.3585             nan     0.1000    0.1276
-##      4        1.2772             nan     0.1000    0.1063
-##      5        1.2092             nan     0.1000    0.0941
-##      6        1.1497             nan     0.1000    0.0721
-##      7        1.1023             nan     0.1000    0.0688
-##      8        1.0600             nan     0.1000    0.0684
-##      9        1.0186             nan     0.1000    0.0756
-##     10        0.9724             nan     0.1000    0.0566
-##     20        0.6958             nan     0.1000    0.0354
-##     40        0.4519             nan     0.1000    0.0127
-##     60        0.3223             nan     0.1000    0.0066
-##     80        0.2421             nan     0.1000    0.0038
-##    100        0.1887             nan     0.1000    0.0016
-##    120        0.1509             nan     0.1000    0.0024
-##    140        0.1212             nan     0.1000    0.0012
-##    150        0.1099             nan     0.1000    0.0009</code></pre>
+##      1        1.6094             nan     0.1000    0.2337
+##      2        1.4607             nan     0.1000    0.1600
+##      3        1.3583             nan     0.1000    0.1247
+##      4        1.2797             nan     0.1000    0.1015
+##      5        1.2155             nan     0.1000    0.0840
+##      6        1.1609             nan     0.1000    0.0816
+##      7        1.1098             nan     0.1000    0.0662
+##      8        1.0685             nan     0.1000    0.0579
+##      9        1.0307             nan     0.1000    0.0617
+##     10        0.9924             nan     0.1000    0.0443
+##     20        0.7581             nan     0.1000    0.0261
+##     40        0.5280             nan     0.1000    0.0116
+##     60        0.4077             nan     0.1000    0.0067
+##     80        0.3290             nan     0.1000    0.0048
+##    100        0.2700             nan     0.1000    0.0035
+##    120        0.2239             nan     0.1000    0.0025
+##    140        0.1892             nan     0.1000    0.0017
+##    150        0.1747             nan     0.1000    0.0027</code></pre>
 </div>
 <div id="cross-validate-1" class="section level3">
 <h3>Cross Validate</h3>
@@ -248,17 +227,21 @@ rf_fit.confusion$overall</code></pre>
 gbm_fit.confusion &lt;- confusionMatrix(gbm_fit.predict_test, train.testing$classe)
 gbm_fit.confusion$overall</code></pre>
 <pre><code>##       Accuracy          Kappa  AccuracyLower  AccuracyUpper   AccuracyNull 
-##      0.9887850      0.9858131      0.9857536      0.9913160      0.2844520 
+##   9.657150e-01   9.566303e-01   9.614482e-01   9.696312e-01   2.844762e-01 
 ## AccuracyPValue  McnemarPValue 
-##      0.0000000            NaN</code></pre>
-<p>The accuracy for Gradient Boosting is 0.988785 which is not as high as Random Forest.</p>
+##   0.000000e+00   2.468689e-06</code></pre>
+<p>The accuracy for Gradient Boosting is 0.965715 which is not as high as Random Forest.</p>
 </div>
 </div>
 </div>
 <div id="select-final-model-and-predict-the-test-results" class="section level1">
 <h1>Select final model and predict the test results</h1>
 <p>As Random Forest had better accuracy, the random forest model will be used to predict the final test results for submission.</p>
-<pre class="r"><code>test.results &lt;- predict(rf_fit, test_transformed)</code></pre>
+<pre class="r"><code>test.rf.results &lt;- predict(rf_fit, test)
+test.rf.results</code></pre>
+<pre><code>##  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16 17 18 19 20 
+##  B  A  B  A  A  E  D  B  A  A  B  C  B  A  E  E  A  B  B  B 
+## Levels: A B C D E</code></pre>
 </div>
 <div id="appendix-a" class="section level1">
 <h1>Appendix A</h1>
